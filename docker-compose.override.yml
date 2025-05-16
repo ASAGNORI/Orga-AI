@@ -1,0 +1,46 @@
+services:
+  ollama:
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '2'
+        reservations:
+          memory: 4G
+          cpus: '1'
+    environment:
+      - GOMEMLIMIT=4096MiB
+      - GOMAXPROCS=2
+      - OLLAMA_MODELS=/models
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS=*
+
+  realtime:
+    environment:
+      - RLIMIT_NOFILE=1048576
+      - ENABLE_CLUSTER=false
+      - FLY_APP_NAME=realtime
+      - FLY_REGION=local
+      - DNS_POLLING_ENABLED=false
+      - DB_HOST=db
+
+  db:
+    hostname: db
+    networks:
+      app-network:
+        aliases:
+          - database
+          - postgres
+          - postgresql
+
+  backend:
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
+
+  rest:
+    environment:
+      - PGRST_DB_URI=postgres://postgres:${POSTGRES_PASSWORD}@db:5432/postgres
+
+  storage:
+    environment:
+      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@db:5432/postgres

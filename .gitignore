@@ -1,0 +1,122 @@
+# ======================
+# Environment variables
+# ======================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+*.env.*
+
+# ======================
+# Node.js dependencies
+# ======================
+node_modules/
+.pnp
+.pnp.js
+
+# ======================
+# Next.js build outputs
+# ======================
+.next/
+out/
+build/
+dist/
+
+# ======================
+# Python
+# ======================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# ======================
+# Docker volumes (except configs)
+# ======================
+/volumes/*
+!/volumes/*/config
+!/volumes/*/init
+!/volumes/db/init
+!/volumes/storage/stub
+
+# ======================
+# Logs
+# ======================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+
+# ======================
+# IDE / Editors
+# ======================
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+.vercel
+*.tsbuildinfo
+
+# ======================
+# Testing
+# ======================
+/coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# ======================
+# Miscellaneous
+# ======================
+.cache/
+.temp/
+.eslintcache
+.stylelintcache
+.turbo
+
+# ======================
+# Arquivos grandes especificamente ignorados
+# ======================
+# Bibliotecas específicas grandes
+**/*.dylib
+**/*.node
+**/*.metallib
+**/*.pack
+
+# Caminhos específicos para arquivos grandes
+.venv/lib/python**/site-packages/torch/
+.venv/lib/python**/site-packages/pyarrow/
+.venv/lib/python**/site-packages/mlx/
+
+# Ignorar blobs de modelos Ollama/IA
+cookbooks/models/blobs/
+cookbooks/n8n-flows/*.json
+
+# Certificados e chaves
+*.pem
+*.key
+*.cert
+*.crt
+*.csr
+
+# Arquivos sensíveis
+*credentials*
+*secret*
+*password*
+.npmrc
+.yarnrc
+
+# GitHub Actions local development
+.github/.actrc

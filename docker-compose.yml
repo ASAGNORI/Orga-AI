@@ -1,0 +1,350 @@
+services:
+  frontend:
+    env_file:
+      - .env
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    ports:
+      - "3010:3000"  # Mapeamento da porta para permitir acesso externo
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}
+      - API_URL=${API_URL}
+      - NODE_ENV=${NODE_ENV}
+    command: npm run dev
+    depends_on:
+      backend:
+        condition: service_started
+    networks:
+      - app-network
+  backend:
+    env_file:
+      - .env
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+          - SUPABASE_URL=${SUPABASE_URL}
+          - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+          - DATABASE_URL=${DATABASE_URL}
+          - SECRET_KEY=${SECRET_KEY}
+          - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+          - OLLAMA_MODEL=${OLLAMA_MODEL}
+          - OLLAMA_API_KEY=${OLLAMA_API_KEY}
+          - OLLAMA_API_URL=${OLLAMA_API_URL}
+          - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+          - WEBUI_API_URL=${WEBUI_API_URL}
+          - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      kong:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://0.0.0.0:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+      
+  db:
+    env_file:
+      - .env
+    image: supabase/postgres:15.1.0.147
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./volumes/db/data:/var/lib/postgresql/data
+    depends_on: {}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+
+  ollama:
+    env_file:
+      - .env
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ollama
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - OLLAMA_MODEL_CHAT=${OLLAMA_MODEL_CHAT}
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_ORIGINS="*"
+      # Performance tuning
+      - GOMEMLIMIT=14336MiB  # Increased to 14GB
+      - GOMAXPROCS=4
+      - OLLAMA_ENABLE_FLASH_ATTENTION=true
+      - OLLAMA_NUM_THREAD=4
+      - OLLAMA_GPU_LAYERS=0  # Disable GPU layers to reduce memory usage
+      # Connection and timeout settings
+      - OLLAMA_REQUEST_TIMEOUT=180  # Increased from 120s to 180s
+      - OLLAMA_COMPLETION_TIMEOUT=180
+      - OLLAMA_KEEP_ALIVE=60  # Keep-alive timeout in seconds
+      - OLLAMA_MAX_CONCURRENT_REQUESTS=4
+      - OLLAMA_MAX_QUEUE_SIZE=100
+      # Model settings
+      - OLLAMA_MODELS=/models  # Custom models directory
+      - OLLAMA_PUSH_WITHOUT_COPY=true  # Faster model pushing
+      # Advanced settings
+      - OLLAMA_USE_MLOCK=true  # Lock model in memory
+      - OLLAMA_VERBOSE=true  # More detailed logging
+    volumes:
+      # Bind mount local folder for Ollama data (models + keys)
+      - ./volumes/ollama_data:/root/.ollama
+      # Mount Modelfile
+      - ./cookbooks/models:/models
+    networks:
+      - app-network
+    restart: always
+    # Resource limits and reservations
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 16G
+        reservations:
+          cpus: '2'
+          memory: 12G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  n8n:
+    env_file:
+      - .env
+    image: n8nio/n8n:1.91.2
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=${N8N_HOST}
+      - N8N_PORT=${N8N_PORT}
+      - N8N_PROTOCOL=${N8N_PROTOCOL}
+      - N8N_USER_MANAGEMENT_DISABLED==${N8N_USER_MANAGEMENT_DISABLED}
+      - N8N_BASIC_AUTH_ACTIVE=${N8N_BASIC_AUTH_ACTIVE}
+      - N8N_EDITOR_BASE_URL=${N8N_EDITOR_BASE_URL}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - TZ=${TZ}
+      - DB_TYPE=${DB_TYPE}
+      - DB_POSTGRESDB_HOST=${DB_POSTGRESDB_HOST}
+      - DB_POSTGRESDB_PORT=${DB_POSTGRESDB_PORT}
+      - DB_POSTGRESDB_DATABASE=${DB_POSTGRESDB_DATABASE}
+      - DB_POSTGRESDB_USER=${DB_POSTGRESDB_USER}
+      - DB_POSTGRESDB_PASSWORD=${DB_POSTGRESDB_PASSWORD}
+      - N8N_RUNNERS_ENABLED=${N8N_RUNNERS_ENABLED}
+    volumes:
+      - ./volumes/n8n:/home/node/.n8n
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  studio:
+    env_file:
+      - .env
+    image: supabase/studio:20241202-71e5240
+    restart: always
+    ports:
+      - "54323:3000"
+    environment:
+      STUDIO_PG_META_URL: ${STUDIO_PG_META_URL}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DEFAULT_ORGANIZATION: ${DEFAULT_ORGANIZATION}
+      DEFAULT_PROJECT: ${DEFAULT_PROJECT}
+      SUPABASE_URL: ${SUPABASE_URL}
+      SUPABASE_REST_URL: ${SUPABASE_REST_URL}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      SUPABASE_API_KEY: ${SUPABASE_API_KEY}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SUPABASE_SERVICE_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # PostgREST service
+  rest:
+    env_file:
+      - .env
+    image: postgrest/postgrest:v12.0.1
+    restart: always
+    ports:
+      - "3001:3000" # Change host port to 3001 for the rest service
+    environment:
+      PGRST_DB_URI: ${PGRST_DB_URI}
+      PGRST_DB_SCHEMA: public,storage
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${PGRST_JWT_SECRET}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 2G
+        reservations:
+          cpus: '2'
+          memory: 1G
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  # Realtime service
+  realtime:
+    env_file:
+      - .env
+    image: supabase/realtime
+    restart: always
+    ports:
+      - "4000:4000"
+    environment:
+      APP_NAME: realtime
+      DB_HOST: ${DB_POSTGRESDB_HOST}
+      DB_PORT: ${DB_POSTGRESDB_PORT}
+      DB_USER: ${DB_POSTGRESDB_USER}
+      DB_PASSWORD: ${DB_POSTGRESDB_PASSWORD}
+      DB_NAME: ${DB_POSTGRESDB_DATABASE}
+      JWT_SECRET: ${JWT_SECRET}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  storage:
+    env_file:
+      - .env
+    image: supabase/storage-api:v0.46.4
+    restart: always
+    environment:
+      ANON_KEY: ${ANON_KEY}
+      SERVICE_KEY: ${SERVICE_KEY}
+      POSTGREST_URL: ${POSTGREST_URL}
+      PGRST_JWT_SECRET: ${PGRST_JWT_SECRET}
+      DATABASE_URL: ${DATABASE_URL}
+      PGOPTIONS: "-c search_path=storage,public"
+      FILE_SIZE_LIMIT: 52428800
+      STORAGE_BACKEND: file
+      FILE_STORAGE_BACKEND_PATH: /var/lib/storage
+      TENANT_ID: ${TENANT_ID}
+      REGION: ${REGION}
+      GLOBAL_S3_BUCKET: ${GLOBAL_S3_BUCKET}
+    volumes:
+      - ./volumes/storage:/var/lib/storage
+    depends_on:
+      db:
+        condition: service_healthy
+      rest:
+        condition: service_started
+    networks:
+      - app-network
+
+  meta:
+    env_file:
+      - .env
+    image: supabase/postgres-meta:v0.77.2
+    restart: always
+    environment:
+      PG_META_PORT: ${PG_META_PORT}
+      PG_META_DB_HOST: ${PG_META_DB_HOST}
+      PG_META_DB_PORT: ${PG_META_DB_PORT}
+      PG_META_DB_NAME: ${PG_META_DB_NAME}
+      PG_META_DB_USER: ${PG_META_DB_USER}
+      PG_META_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+
+  kong:
+    env_file:
+      - .env
+    image: kong:2.8.1
+    restart: always
+    ports:
+      - "8010:8000"   # API gateway
+      - "8443:8443"   # API gateway HTTPS
+      - "8001:8001"   # Admin API
+      - "8002:8002"   # Admin GUI
+      - "8444:8444"   # Admin GUI HTTPS
+      - "8003:8003"   # Kong Manager
+      - "8445:8445"   # Kong Manager HTTPS
+      - "8004:8004"   # Kong Dev Portal
+      - "8446:8446"   # Kong Dev Portal HTTPS
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /var/lib/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: cors,key-auth,acl
+    volumes:
+      - ./kong.yml:/var/lib/kong/kong.yml:ro
+    depends_on:
+      rest:
+        condition: service_started
+      storage:
+        condition: service_started
+      meta:
+        condition: service_started
+    networks:
+      - app-network
+
+  open-webui:
+    env_file:
+      - .env
+    image: ghcr.io/ollama-webui/ollama-webui:main
+    volumes:
+      - ./volumes/open-webui:/app/.ollama-webui
+    ports:
+      - "3000:3000" # WebUI accessible from local network
+    networks:
+      - app-network
+    environment:
+      - PORT=3000
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+      - WEBUI_AUTH=${WEBUI_AUTH}
+      - WEBUI_AUTHENTICATION_TYPE=${WEBUI_AUTHENTICATION_TYPE}
+      - WEBUI_JWT_SECRET_KEY=${JWT_SECRET}
+    restart: always
+    depends_on:
+      - ollama
+       
+volumes:
+  db:
+  storage:
+  ollama:
+  open-webui:
+
+networks:
+  app-network:
+    driver: bridge

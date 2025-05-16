@@ -1,0 +1,106 @@
+{
+  "name": "Orga.AI Full Stack Development",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "backend",
+  "workspaceFolder": "/app",
+  
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true,
+        "python.linting.pylintEnabled": true,
+        "python.formatting.provider": "black",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+          "source.fixAll.eslint": true
+        },
+        "typescript.tsdk": "node_modules/typescript/lib",
+        "eslint.workingDirectories": ["./frontend"],
+        "tailwindCSS.includeLanguages": {
+          "typescript": "javascript",
+          "typescriptreact": "javascript"
+        },
+        "tailwindCSS.emmetCompletions": true,
+        "emmet.includeLanguages": { 
+          "javascript": "javascriptreact",
+          "typescript": "typescriptreact"
+        }
+      },
+      "extensions": [
+        // Python
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-python.black-formatter",
+        "matangover.mypy",
+        
+        // JavaScript/TypeScript
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "formulahendry.auto-rename-tag",
+        
+        // Docker & Infrastructure
+        "ms-azuretools.vscode-docker",
+        "ms-vscode-remote.remote-containers",
+        
+        // Database
+        "cweijan.vscode-postgresql-client2",
+        
+        // Utilities
+        "streetsidesoftware.code-spell-checker",
+        "eamodio.gitlens",
+        "github.copilot",
+        "github.copilot-chat",
+        "gruntfuggly.todo-tree",
+        
+        // AI
+        "llama.llama-index",
+        "rubberduck.rubberduck-vscode"
+      ]
+    }
+  },
+  
+  "forwardPorts": [
+    3000,  // Frontend
+    8000,  // Backend API
+    11435, // Ollama
+    5678,  // N8N
+    54321, // Supabase API
+    54323  // Supabase Studio
+  ],
+  
+  // Configure volumes to persist your workspace and container data
+  "mounts": [
+    "source=${localWorkspaceFolder}/frontend,target=/app/frontend,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/backend,target=/app/backend,type=bind,consistency=cached"
+  ],
+  
+  // Run post-create command to set up development environment
+  "postCreateCommand": "bash ./scripts/sh/health-check.sh",
+  
+  // Use 'postStartCommand' to run commands after the container starts
+  "postStartCommand": "echo 'Orga.AI development environment is ready! 🚀'",
+  
+  // Comment out to run as root
+  "remoteUser": "vscode",
+  
+  // Required for enabling GPU if needed for Ollama
+  "runArgs": [
+    // Uncomment to use GPU for Ollama
+    // "--gpus=all"
+  ],
+  
+  // Features to add to the dev container
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "18"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    }
+  }
+}

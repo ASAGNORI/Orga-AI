@@ -1,0 +1,14 @@
+FROM supabase/gotrue:v2.132.3
+
+# Garantir que o comando seja executado como root
+USER root
+
+# Instalar ferramentas do cliente PostgreSQL
+RUN apk add --no-cache postgresql-client
+
+# Copiar o script de espera pelo PostgreSQL
+COPY wait-for-postgres.sh /scripts/wait-for-postgres.sh
+RUN chmod +x /scripts/wait-for-postgres.sh
+
+# Configurar o ponto de entrada
+ENTRYPOINT ["/bin/sh", "-c", "/scripts/wait-for-postgres.sh && /usr/local/bin/gotrue"]

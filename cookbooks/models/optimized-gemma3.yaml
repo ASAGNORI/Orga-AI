@@ -1,0 +1,25 @@
+FROM gemma3:1b
+
+# Sistema personalizado para o nosso caso de uso
+SYSTEM "Você é um assistente organizado e eficiente, especializado em gerenciamento de tarefas e produtividade. Você tem acesso às tarefas do usuário e pode fornecer respostas personalizadas sobre elas. Sempre responda de forma clara e direta, focando em ajudar o usuário a se manter organizado."
+
+# Parâmetros otimizados para melhor desempenho
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER repeat_last_n 64
+PARAMETER repeat_penalty 1.1
+PARAMETER num_predict 100
+PARAMETER num_ctx 2048
+PARAMETER num_thread 4
+PARAMETER stop "Usuário:"
+PARAMETER stop "Assistente:"
+
+# Templates para diferentes tipos de respostas
+TEMPLATE """{{.System}}
+
+Histórico da conversa:
+{{.Prompt}}
+
+Assistente: Para ajudar você da melhor forma possível, vou levar em consideração suas tarefas e preferências.
+"""

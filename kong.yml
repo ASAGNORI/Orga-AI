@@ -1,0 +1,359 @@
+_format_version: "2.1"
+_transform: true
+
+services:
+  - name: auth-v1
+    url: http://auth:9999
+    routes:
+      - name: auth-v1-route
+        paths:
+          - /auth/v1
+        strip_path: true
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:54323"
+            - "http://localhost:3010"
+            - "http://0.0.0.0:3010"
+            - "http://*:3010"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - Authorization
+            - X-Client-Info
+          exposed_headers:
+            - Content-Length
+            - Content-Range
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+
+  - name: rest-v1
+    url: http://rest:3001
+    routes:
+      - name: rest-v1-route
+        paths:
+          - /rest/v1
+        strip_path: true
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:54323"
+            - "http://localhost:3010"
+            - "http://0.0.0.0:3010"
+            - "http://*:3010"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - Authorization
+            - X-Client-Info
+          exposed_headers:
+            - Content-Length
+            - Content-Range
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+
+  - name: realtime-v1
+    url: http://realtime:4000/socket
+    routes:
+      - name: realtime-v1-route
+        paths:
+          - /realtime/v1
+        strip_path: true
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:54323"
+            - "http://localhost:3010"
+            - "http://0.0.0.0:3010"
+            - "http://*:3010"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - Authorization
+            - X-Client-Info
+          exposed_headers:
+            - Content-Length
+            - Content-Range
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+
+  - name: storage-v1
+    url: http://storage:5000
+    routes:
+      - name: storage-v1-route
+        paths:
+          - /storage/v1
+        strip_path: true
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:54323"
+            - "http://localhost:3010"
+            - "http://0.0.0.0:3010"
+            - "http://*:3010"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - Authorization
+            - X-Client-Info
+          exposed_headers:
+            - Content-Length
+            - Content-Range
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+
+  - name: meta
+    url: http://meta:8080
+    routes:
+      - name: meta-route
+        paths:
+          - /pg
+        strip_path: true
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:54323"
+            - "http://localhost:3010"
+            - "http://0.0.0.0:3010"
+            - "http://*:3010"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - Authorization
+            - X-Client-Info
+          exposed_headers:
+            - Content-Length
+            - Content-Range
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+
+  - name: studio
+    url: http://studio:3000
+    routes:
+      - name: studio-route
+        paths:
+          - /
+        strip_path: true
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:54323"
+            - "http://localhost:3010"
+            - "http://0.0.0.0:3010"
+            - "http://*:3010"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - Authorization
+            - X-Client-Info
+          exposed_headers:
+            - Content-Length
+            - Content-Range
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+
+  # Add backend service routing
+  - name: backend-v1
+    url: http://backend:8000
+    routes:
+      - name: backend-v1-route
+        paths:
+          - /api
+          - /health
+        strip_path: false
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:54323"
+            - "http://localhost:3010"
+            - "http://0.0.0.0:3010"
+            - "http://*:3010"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - Authorization
+            - X-Client-Info
+          exposed_headers:
+            - Content-Length
+            - Content-Range
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+
+  # Add Ollama service routing
+  - name: ollama-v1
+    url: http://ollama:11434
+    routes:
+      - name: ollama-v1-route
+        paths:
+          - /ollama/v1
+        strip_path: true
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:54323"
+            - "http://localhost:3010"
+            - "http://0.0.0.0:3010"
+            - "http://*:3010"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - Authorization
+            - X-Client-Info
+          exposed_headers:
+            - Content-Length
+            - Content-Range
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+
+  # Add WebUI service routing
+  - name: webui-v1
+    url: http://webui:3000
+    routes:
+      - name: webui-v1-route
+        paths:
+          - /webui
+        strip_path: true
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3000"
+            - "http://localhost:54323"
+            - "http://localhost:3010"
+            - "http://0.0.0.0:3010"
+            - "http://*:3010"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - PATCH
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - Authorization
+            - X-Client-Info
+          exposed_headers:
+            - Content-Length
+            - Content-Range
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+

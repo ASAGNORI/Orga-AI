@@ -1,0 +1,539 @@
+import os
+import json
+import logging
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnableLambda
+from langchain_core.runnables import RunnableMap
+from langchain_core.messages import AIMessage, SystemMessage, HumanMessage
+from langchain_ollama import ChatOllama
+import requests
+import time
+import logging
+import json
+import os
+import numpy as np
+from typing import Optional, Any, Dict, List, Tuple
+import uuid
+
+from app.services.context_manager import context_manager
+from app.services.vector_store_service import vector_store_service
+from app.services.intent_recognizer import intent_recognizer
+
+# Configuração de logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+
+class AIService:
+    def __init__(self):
+        # Forçar a URL para o serviço Ollama dentro da rede Docker
+        self.ollama_api_url = "http://ollama:11434"
+        logger.info(f"Usando URL fixa do Ollama: {self.ollama_api_url}")
+        
+        # Obter modelo da variável de ambiente OLLAMA_MODEL_CHAT
+        env_model_chat = os.environ.get("OLLAMA_MODEL_CHAT", "gemma3:1b")
+        
+        logger.info(f"Usando modelo da variável de ambiente: OLLAMA_MODEL_CHAT={env_model_chat}")
+        
+        # Usar diretamente o modelo da variável de ambiente
+        self.ollama_model = env_model_chat
+        self.llm = None
+        
+        # Lista de modelos alternativos em ordem de preferência (do mais pesado ao mais leve)
+        self.fallback_models = [
+            self.ollama_model,           # Modelo principal configurado
+            "gemma3:1b",                 # Modelo compacto (815MB)
+            "phi3:mini",                 # Modelo muito pequeno (~500MB RAM)
+
+        ]
+        
+        # Verificar se o modelo está disponível no Ollama
+        available_models = self._get_available_models()
+        logger.info(f"Modelos disponíveis no Ollama: {available_models}")
+        
+        # Inicializar o LLM com o modelo mais adequado disponível
+        self._initialize_llm_with_fallback(available_models)
+            
+    def _get_available_models(self) -> List[Dict[str, Any]]:
+        """Obtém a lista de modelos disponíveis no Ollama."""
+        try:
+            endpoint = "/api/tags" if not self.ollama_api_url.endswith("/api") else "/tags"
+            full_url = f"{self.ollama_api_url}{endpoint}"
+            logger.info(f"Verificando modelos disponíveis em: {full_url}")
+            
+            response = requests.get(full_url, timeout=10)
+            if response.status_code == 200:
+                models = response.json().get('models', [])
+                logger.info(f"Modelos encontrados: {[m.get('name', '') for m in models]}")
+                return models
+            else:
+                logger.warning(f"Erro ao obter modelos: {response.status_code} {response.text}")
+                return []
+        except requests.RequestException as e:
+            logger.warning(f"Erro de requisição ao conectar ao serviço Ollama: {str(e)}")
+            return []
+        except Exception as e:
+            logger.warning(f"Erro ao conectar ao serviço Ollama: {str(e)}")
+            return []
+    
+    def _initialize_llm_with_fallback(self, available_models):
+        """Tenta inicializar o LLM com o modelo principal ou fallbacks"""
+        # Criar um set de modelos disponíveis para busca rápida
+        available_model_names = {m['name'].split(':')[0] for m in available_models} if available_models else set()
+        
+        # Verificar disponibilidade do modelo atual
+        logger.info(f"Tentando inicializar o LLM com modelo: {self.ollama_model}")
+        
+        # Tentar cada modelo na ordem de preferência
+        for model in self.fallback_models:
+            model_name = model.split(':')[0]  # Separar nome do modelo da tag
+            
+            if model_name not in available_model_names:
+                logger.info(f"Modelo {model} não está disponível, tentando próximo na lista")
+                continue
+                
+            try:
+                logger.info(f"Tentando inicializar o LLM com modelo: {model}")
+                
+                # Configurar parâmetros super-otimizados para melhorar desempenho e tempo de resposta
+                self.llm = ChatOllama(
+                    model=model, 
+                    base_url=self.ollama_api_url,
+                    num_ctx=2048,       # Contexto suficiente para manter coerência
+                    num_gpu=1,          # Usar GPU se disponível
+                    num_thread=4,       # Threads suficientes para processamento
+                    temperature=0.1,    # Menor temperatura para respostas mais precisas
+                    num_predict=512,    # Tamanho adequado para respostas completas
+                    top_k=40,          # Mais opções para melhor qualidade
+                    top_p=0.9,         # Probabilidade cumulativa para sampling
+                    repeat_penalty=1.1, # Evitar repetições
+                    seed=42            # Seed fixo para consistência
+                )
+                
+                self.ollama_model = model
+                logger.info(f"LLM carregado com sucesso usando modelo: {model}")
+                return
+            except Exception as e:
+                if "more system memory" in str(e).lower():
+                    logger.warning(f"Erro de memória ao carregar modelo {model}. Erro: {str(e)}")
+                else:
+                    logger.error(f"Erro ao inicializar LLM com modelo {model}: {str(e)}")
+        
+        # Se chegou aqui, nenhum modelo funcionou
+        logger.error("Não foi possível inicializar nenhum modelo LLM, mesmo com fallbacks.")
+        self.llm = None
+            
+    def _get_default_suggestions(self):
+        return {
+            "context": "sem contexto",
+            "category": "geral",
+            "priority": "média",
+            "risk": "baixo"
+        }
+
+    async def generate_response(self, message, context=None):
+        """
+        Gera uma resposta da IA com base na mensagem e contexto fornecidos.
+        Utiliza um sistema híbrido de RAG, intenções reconhecidas e LLM.
+        """
+        # Verificar se há uma intenção clara na mensagem
+        has_intent, intent_info = intent_recognizer.process_message(message)
+        if has_intent and intent_info:
+            logger.info(f"Intenção reconhecida: {intent_info['intent']} - Confiança: {intent_info['confidence']}")
+            
+            # Se a confiança for alta e não requer contexto complexo, responder diretamente
+            if intent_info['confidence'] > 0.8 and intent_info['intent'] in ["saudação", "despedida", "agradecimento", "ajuda"]:
+                return AIResponse(
+                    content=intent_info['response'],
+                    context={"suggested_tags": [intent_info['intent']], "intent": intent_info['intent']}
+                )
+        
+        # Se chegou aqui, precisamos usar o LLM
+        if self.llm is None:
+            logger.error("LLM não inicializado. Tentando reinicializar antes de retornar resposta padrão...")
+            
+            available_models = self._get_available_models()
+            self._initialize_llm_with_fallback(available_models)
+            
+            if self.llm is None:
+                logger.error("Reinicialização falhou. Retornando resposta padrão.")
+                return AIResponse(
+                    content="Serviço de IA não disponível no momento. Estamos trabalhando para resolver isso.",
+                    context={"suggested_tags": ["erro", "serviço indisponível"]}
+                )
+            
+        try:
+            input_text = message
+            user_id = None
+            suggested_tags = ["chat", "resposta"]
+            rag_context = ""
+            
+            # Extrair user_id do contexto para uso com RAG
+            if context and isinstance(context, dict):
+                if "user" in context and "id" in context["user"]:
+                    user_id = context["user"]["id"]
+                    
+                    # Usar RAG para obter contexto relevante
+                    try:
+                        # Atualizar o vectorstore para este usuário
+                        if "db" in context:
+                            vector_store_service.update_user_vectorstore(user_id, context["db"])
+                        
+                        # Obter contexto relevante com base na consulta
+                        rag_context = vector_store_service.get_formatted_context(user_id, message)
+                        if rag_context:
+                            logger.info(f"Contexto RAG encontrado: {len(rag_context)} caracteres")
+                            
+                            # Adicionar tags baseadas no contexto encontrado
+                            if "task" in rag_context.lower():
+                                suggested_tags.append("tarefas")
+                            if "projeto" in rag_context.lower():
+                                suggested_tags.append("projetos")
+                    except Exception as rag_error:
+                        logger.error(f"Erro ao obter contexto RAG: {str(rag_error)}")
+            
+            # MELHORIA: Usar o gerenciador de contexto para otimizar o histórico
+            context_history = []
+            history_summary = ""
+            
+            if context and isinstance(context, dict) and "history" in context and context["history"]:
+                try:
+                    context_history = context_manager.optimize_context(context["history"])
+                    if len(context["history"]) > context_manager.max_messages:
+                        history_summary = context_manager.summarize_history(context["history"])
+                except Exception as e:
+                    logger.warning(f"Erro ao otimizar histórico: {str(e)}")
+                    # Fallback para histórico simples em caso de erro
+                    context_history = context["history"][-5:] if context["history"] else []
+                    history_summary = context_manager.summarize_history(context["history"])
+            
+            # Construir o prompt enriquecido com RAG
+            if rag_context:
+                input_text = f"{rag_context}\n\nPergunta: {input_text}"
+            
+            if history_summary:
+                input_text = f"{history_summary}\n\n{input_text}"
+            
+            # Se uma intenção foi reconhecida, adicionar ao contexto do sistema
+            system_prompt = ""
+            if has_intent:
+                system_prompt = f"O usuário parece querer {intent_info['intent']}. "
+                suggested_tags.append(intent_info['intent'])
+                
+                if 'entities' in intent_info and intent_info['entities']:
+                    entity_text = ", ".join(f"{k}={v}" for k, v in intent_info['entities'].items())
+                    system_prompt += f"Entidades detectadas: {entity_text}. "
+            
+            # Preparar mensagens para o modelo
+            if system_prompt:
+                messages = [{"role": "system", "content": system_prompt}] + context_history + [{"role": "user", "content": input_text}]
+            else:
+                messages = context_history + [{"role": "user", "content": input_text}]
+            
+            logger.info(f"Enviando mensagens para LLM (total: {len(messages)}): {messages}")
+            
+            try:
+                start_time = time.time()
+                response = await self.llm.ainvoke(messages)
+                elapsed_time = time.time() - start_time
+                logger.info(f"Resposta gerada em {elapsed_time:.2f} segundos")
+
+                # Extrair o conteúdo da resposta corretamente
+                if isinstance(response, AIMessage):
+                    content = response.content
+                elif isinstance(response, dict) and 'content' in response:
+                    content = response['content']
+                elif isinstance(response, dict) and 'message' in response and 'content' in response['message']:
+                    content = response['message']['content']
+                else:
+                    content = str(response)
+                
+                logger.info(f"Generated reply: {content}")
+                
+                # Limitar as tags a no máximo 5
+                if len(suggested_tags) > 5:
+                    suggested_tags = suggested_tags[:5]
+                
+                return AIResponse(
+                    content=content,
+                    context={
+                        "suggested_tags": suggested_tags,
+                        "rag_used": bool(rag_context),
+                        "intent_detected": intent_info['intent'] if has_intent else None
+                    }
+                )
+                
+            except Exception as llm_error:
+                logger.error(f"Erro específico ao invocar LLM: {str(llm_error)}")
+                
+                # Verificar se é um erro de memória e tentar fallback para modelo mais leve
+                if "more system memory" in str(llm_error).lower():
+                    logger.warning("Erro de memória detectado. Tentando com modelo mais leve...")
+                    
+                    # Encontrar o próximo modelo mais leve na lista de fallback
+                    current_index = self.fallback_models.index(self.ollama_model) if self.ollama_model in self.fallback_models else -1
+                    
+                    if current_index >= 0 and current_index + 1 < len(self.fallback_models):
+                        next_model = self.fallback_models[current_index + 1]
+                        logger.info(f"Tentando inicializar modelo mais leve: {next_model}")
+                        
+                        try:
+                            self.llm = ChatOllama(
+                                model=next_model, 
+                                base_url=self.ollama_api_url,
+                                num_ctx=2048,
+                                num_gpu=1,
+                                num_thread=4
+                            )
+                            self.ollama_model = next_model
+                            logger.info(f"Modelo alternativo carregado: {next_model}. Tentando novamente a consulta.")
+                            
+                            # Tentar novamente com o novo modelo
+                            response = await self.llm.ainvoke(messages)
+                            
+                            if isinstance(response, AIMessage):
+                                content = response.content
+                            elif isinstance(response, dict) and 'content' in response:
+                                content = response['content']
+                            elif isinstance(response, dict) and 'message' in response and 'content' in response['message']:
+                                content = response['message']['content']
+                            else:
+                                content = str(response)
+                                
+                            return AIResponse(
+                                content=content,
+                                context={"suggested_tags": ["tarefa", "alternativo"]}
+                            )
+                        except Exception as retry_error:
+                            logger.error(f"Também falhou com modelo alternativo: {str(retry_error)}")
+                
+                # Se chegou aqui, retornar mensagem de erro
+                return AIResponse(
+                    content="Desculpe, o serviço de IA está com problemas momentâneos. Tente novamente em alguns instantes.",
+                    context={"suggested_tags": ["erro", "problema técnico"]}
+                )
+                
+        except Exception as e:
+            logger.error(f"Erro geral ao gerar resposta: {str(e)}")
+            
+            return AIResponse(
+                content="Desculpe, não foi possível gerar uma resposta neste momento. Por favor, tente novamente mais tarde.",
+                context={"suggested_tags": ["erro", "falha"]}
+            )
+
+    def health_check(self) -> bool:
+        try:
+            if self.llm is None:
+                logger.warning("LLM não inicializado durante health check")
+                return False
+                
+            # Usar uma requisição simples para verificar se o Ollama está respondendo
+            endpoint = "/api/tags" if not self.ollama_api_url.endswith("/api") else "/tags"
+            full_url = f"{self.ollama_api_url}{endpoint}"
+            logger.info(f"Health check em: {full_url}")
+            
+            response = requests.get(full_url, timeout=5)
+            success = response.status_code == 200
+            logger.info(f"Health check resultado: {'Sucesso' if success else 'Falha'} (status={response.status_code})")
+            return success
+        except Exception as e:
+            logger.warning(f"Falha na verificação de saúde: {str(e)}")
+            return False
+
+    def suggest_task_attributes(self, task_description):
+        if self.llm is None:
+            return self._get_default_suggestions()
+
+        system_prompt = """
+Você é um assistente especialista em análise de tarefas. Seu trabalho é analisar descrições de tarefas e sugerir os seguintes atributos no formato JSON:
+{
+  "context": "...", (resumo do cenário da tarefa)
+  "category": "...", (tipo de tarefa: financeira, técnica, pessoal, etc)
+  "priority": "...", (baixa, média, alta)
+  "risk": "..." (baixo, médio, alto)
+}
+"""
+        prompt = f"Descrição da tarefa: {task_description}"
+
+        try:
+            response = self.llm.invoke([
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ])
+            logger.info("Resposta da IA: %s", response)
+            suggestions = json.loads(response)
+            return suggestions
+        except json.JSONDecodeError as e:
+            logger.warning("Resposta em formato inválido. Retornando sugestão padrão. Erro: %s", e)
+            return self._get_default_suggestions()
+        except Exception as e:
+            logger.error("Erro ao sugerir atributos: %s", str(e))
+            return self._get_default_suggestions()
+
+    def process_message(self,
+                     message: str,
+                     history: List[Tuple[str, str]] = [],
+                     user_context: Optional[Dict[str, Any]] = None,
+                     user_id: Optional[str] = None) -> Tuple[str, Dict[str, Any]]:
+        """
+        Processa uma mensagem do usuário, considerando histórico e RAG.
+        
+        Args:
+            message: A mensagem enviada pelo usuário
+            history: Histórico de conversas anteriores como tuplas (usuário, ai)
+            user_context: Contexto adicional do usuário
+            user_id: ID do usuário para RAG
+            
+        Returns:
+            Tupla com (resposta da IA, metadados do processamento)
+        """
+        # Inicializar metadados
+        metadata = {
+            "start_time": time.time(),
+            "processing_steps": [],
+            "used_rag": False,
+            "used_intent": False,
+            "query_length": len(message.split()),
+            "history_length": len(history)
+        }
+
+        
+        try:
+            # Verificar se a mensagem está vazia
+            if not message or not message.strip():
+                metadata["processing_steps"].append("empty_message")
+                return "Parece que você enviou uma mensagem vazia. Como posso te ajudar?", metadata
+                
+            # Etapa 1: Verificar se temos uma intenção reconhecida
+            has_intent, intent_info = intent_recognizer.process_message(message)
+            metadata["intent_detected"] = has_intent
+            
+            if has_intent:
+                metadata["used_intent"] = True
+                metadata["intent_type"] = intent_info.get("intent")
+                metadata["processing_steps"].append("intent_recognition")
+                
+                # Mensagens curtas com intenção clara podem ser respondidas sem LLM
+                if intent_info.get("response") and len(message.split()) <= 10:
+                    logger.info(f"Respondendo usando intent reconhecido: {intent_info.get('intent')}")
+                    metadata["processing_steps"].append("quick_response")
+                    metadata["processing_time"] = time.time() - metadata["start_time"]
+                    return intent_info.get("response"), metadata
+            
+            # Etapa 2: Buscar contexto RAG se tivermos ID do usuário
+            rag_context = None
+            if user_id and hasattr(vector_store_service, 'get_formatted_context'):
+                metadata["processing_steps"].append("rag_context_retrieval")
+                rag_context = vector_store_service.get_formatted_context(user_id, message)
+                if rag_context:
+                    metadata["used_rag"] = True
+                    metadata["rag_context_size"] = len(rag_context.split())
+                    logger.info("Contexto RAG encontrado e será incorporado")
+                
+            # Verificar se o LLM está disponível
+            if not self.llm:
+                metadata["processing_steps"].append("llm_unavailable")
+                metadata["error"] = "LLM indisponível"
+                return "Desculpe, o serviço de IA está temporariamente indisponível.", metadata
+                
+            # Enriquecer o histórico para contexto
+            chain_history = []
+            
+            # Limitar o histórico às últimas 5 interações para melhor performance
+            limited_history = history[-5:] if len(history) > 5 else history
+            
+            # Adicionar histórico limitado
+            for h_message, h_response in limited_history:
+                chain_history.append({"role": "user", "content": h_message})
+                chain_history.append({"role": "assistant", "content": h_response})
+            
+            # Etapa 3: Preparar prompt com contexto RAG quando disponível
+            prompt = message
+            if rag_context:
+                # Adicionar contexto RAG ao prompt
+                prompt = f"{rag_context}\n\nPergunta do usuário: {message}"
+                metadata["processing_steps"].append("prompt_with_rag")
+            
+            # Etapa 4: Adicionar contexto de intenção se detectado
+            if has_intent and intent_info.get("intent") not in ["saudação", "despedida", "agradecimento"]:
+                # Adicionar uma mensagem ao sistema com a intenção detectada
+                intent_system_msg = {
+                    "role": "system", 
+                    "content": f"O usuário parece estar tentando: {intent_info.get('intent')}. " + 
+                              f"Se apropriado, ajude-o com essa intenção."
+                }
+                chain_history.insert(0, intent_system_msg)
+                metadata["processing_steps"].append("prompt_with_intent")
+                
+            # Processar a resposta
+            logger.info("Enviando requisição para o modelo")
+            metadata["processing_steps"].append("llm_call")
+            
+            # No histórico, usamos o Ollama diretamente para obter respostas mais rápidas
+            start_time = time.time()
+            
+            # Usamos invoke_with_message_history para adicionar nosso histórico personalizado
+            ai_message = self.llm.invoke(prompt, config={
+                "message_history": chain_history
+            })
+            
+            processing_time = time.time() - start_time
+            metadata["llm_processing_time"] = processing_time
+            metadata["processing_steps"].append("llm_response")
+            logger.info(f"Resposta recebida em {processing_time:.2f} segundos")
+            
+            # Verificar se obtivemos uma resposta válida
+            response = ""
+            if isinstance(ai_message, AIMessage):
+                response = ai_message.content
+            elif hasattr(ai_message, 'content'):
+                response = ai_message.content
+            else:
+                # Fallback para o caso de formato desconhecido
+                response = str(ai_message)
+            
+            # Atualizar vetor store com a nova interação se tivermos ID do usuário
+            if user_id and hasattr(vector_store_service, 'ensure_vector_db_updated'):
+                try:
+                    chat_text = f"Pergunta: {message}\nResposta: {response}"
+                    vector_store_service.ensure_vector_db_updated(
+                        user_id, "chat", str(time.time()), chat_text
+                    )
+                    metadata["processing_steps"].append("vector_store_updated")
+                except Exception as ve:
+                    logger.error(f"Erro ao atualizar vetor store: {ve}")
+                    metadata["vector_store_error"] = str(ve)
+            
+            # Finalizar metadados
+            metadata["processing_time"] = time.time() - metadata["start_time"]
+            metadata["response_length"] = len(response.split())
+            
+            return response, metadata
+                
+        except Exception as e:
+            logger.error(f"Erro ao processar mensagem: {e}")
+            # Adicionar informações de erro aos metadados
+            metadata = metadata or {}
+            metadata["error"] = str(e)
+            metadata["processing_time"] = time.time() - metadata.get("start_time", time.time())
+            # Fallback para erro
+            return "Desculpe, ocorreu um erro ao processar sua mensagem. Pode tentar novamente?", metadata
+
+class AIResponse:
+    def __init__(self, content, context=None):
+        self.content = content
+        self.context = context or {}
+
+# Criação da instância global
+ai_service = AIService()
+
+# Criação do RunnableMap com contexto melhorado
+ai = AIService()
+app = RunnableMap({
+    "response": lambda x: ai.generate_response(message=x.get('message'), context=x.get('context')),
+    "suggest": lambda x: ai.suggest_task_attributes(x.get('message')),
+    "context": lambda x: {
+        "tasks": x.get('context', {}).get('tasks', []),
+        "history": x.get('context', {}).get('history', []),
+        "user": x.get('context', {}).get('user', {})
+    }
+})

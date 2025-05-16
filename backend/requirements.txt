@@ -1,0 +1,77 @@
+# Web/API (FastAPI stack)
+fastapi>=0.110.0
+uvicorn>=0.27.1
+httpx>=0.28.1
+httpx-sse==0.4.0 
+python-multipart==0.0.9
+
+# Utilitários Python / Configuração
+python-dotenv==1.1.0
+pydantic>=2.10.5
+pydantic-settings>=2.9.1
+pytz>=2025.2
+python-dateutil==2.8.2
+tenacity>=8.2.0,<=9.1.2
+certifi==2024.12.14
+
+# Database e Supabase
+sqlalchemy==2.0.27
+psycopg2-binary==2.9.9
+supabase==2.15.1
+hdbcli==2.24.24
+
+# Autenticação e Segurança
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+email-validator==2.0.0
+python-jose[cryptography]==3.4.0
+PyJWT==2.8.0
+aiosmtplib==2.0.2
+
+# LangChain Ecosystem
+langchain>=0.3.25 
+langchain-core>=0.3.58
+langchain-openai>=0.2.14
+langchain-ollama>=0.3.2
+langchain-anthropic>=0.3.1
+langchain-google-genai>=2.0.7
+langchain-huggingface>=0.1.2
+langchain-experimental>=0.3.4
+langchain-community>=0.3.23
+langchain-text-splitters>=0.3.8
+langserve==0.3.0
+langsmith>=0.3.42
+ragas==0.2.9
+openai==1.59.7
+ollama>=0.4.8
+
+# LLM Index (LlamaIndex) e Readers
+llama-index-core==0.11.23
+llama-index-readers-file==0.2.2
+markitdown==0.0.1a3
+
+# ML e Deep Learning
+numpy<2.0.0
+torch>=2.0.0,<3.0.0
+tokenizers>=0.21.1
+transformers>=4.51.3
+sentence-transformers>=4.1.0
+huggingface-hub>=0.31.1
+
+# Testes e Qualidade de Código
+black==24.2.0
+isort==5.13.2
+flake8==7.0.0
+pytest==7.3.1
+pytest-asyncio==0.23.5
+pytest-cov==4.1.0
+mypy==1.8.0
+mypy-extensions==1.1.0 
+
+# Jupyter / Notebook Tools
+jupyter==1.1.1
+notebook==7.3.2
+
+# Apple Silicon (somente macOS)
+mlx==0.22.0 ; sys_platform == "darwin"
+mlx-lm==0.21.1 ; sys_platform == "darwin"

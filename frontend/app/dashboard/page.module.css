@@ -1,0 +1,103 @@
+.dashboardContainer {
+  @apply min-h-screen bg-blue-100 p-8;
+}
+
+.mainContent {
+  @apply container mx-auto px-4 py-8;
+}
+
+.header {
+  @apply mb-8;
+}
+
+.headerTitle {
+  @apply text-3xl font-bold text-blue-800 mb-2;
+}
+
+.headerDescription {
+  @apply text-sm text-blue-600;
+}
+
+.statsGrid {
+  @apply grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8;
+}
+
+.statCard {
+  @apply bg-white rounded-lg shadow-lg overflow-hidden;
+}
+
+.statCardInner {
+  @apply px-4 py-5 sm:p-6 border-l-4;
+}
+
+.statLabel {
+  @apply text-sm font-medium text-gray-600 truncate;
+}
+
+.statValue {
+  @apply mt-1 text-3xl font-semibold text-blue-800;
+}
+
+.tasksSection {
+  @apply bg-white shadow-lg rounded-lg p-6;
+}
+
+.tasksSectionHeader {
+  @apply flex items-center justify-between mb-6;
+}
+
+.tasksSectionTitle {
+  @apply text-xl font-bold text-blue-800;
+}
+
+.taskList {
+  @apply space-y-4;
+}
+
+.taskItem {
+  @apply flex items-center justify-between p-4 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors;
+}
+
+.taskTitle {
+  @apply text-sm font-medium text-blue-900;
+}
+
+.taskMeta {
+  @apply flex items-center space-x-4;
+}
+
+.taskDueDate {
+  @apply text-sm text-blue-600;
+}
+
+.taskPriority {
+  @apply px-2 py-1 text-xs font-medium rounded-full;
+}
+
+.priorityHigh {
+  @apply bg-red-100 text-red-800;
+}
+
+.priorityMedium {
+  @apply bg-yellow-100 text-yellow-800;
+}
+
+.priorityLow {
+  @apply bg-green-100 text-green-800;
+}
+
+.addTaskButton {
+  @apply inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500;
+}
+
+.filterSection {
+  @apply flex items-center space-x-4 mb-6;
+}
+
+.filterSelect {
+  @apply block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md bg-white text-gray-700;
+}
+
+.searchInput {
+  @apply block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm;
+} 

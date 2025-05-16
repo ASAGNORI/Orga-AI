@@ -1,0 +1,373 @@
+{
+  "name": "n8n_email_daily_tasks_fixed",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "21b45205-19ba-4ae1-87ac-dfa02520b38f",
+      "name": "Agendamento Diário (7:30)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        20,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "http://backend:8000/api/v1/admin/users",
+        "options": {}
+      },
+      "id": "a4b3441f-38ff-4676-adfb-fe32f7d6078c",
+      "name": "Obter Lista de Usuários",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8uYcMjGGO8U176PN",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtra apenas usuários com email válido\nconst response = $input.all();\nconsole.log('Resposta da API:', JSON.stringify(response).substring(0, 200));\n\n// Extrair os usuários da resposta\nlet usuarios = [];\nif (response && response.length > 0 && response[0].json) {\n  // Verificar se os dados estão dentro de um campo 'data'\n  if (response[0].json.data && Array.isArray(response[0].json.data)) {\n    usuarios = response[0].json.data;\n  } \n  // Verificar se o json já é um array\n  else if (Array.isArray(response[0].json)) {\n    usuarios = response[0].json;\n  }\n}\n\nconsole.log('Total de usuários extraídos:', usuarios.length);\n\n// Filtra apenas os que têm email\nconst usuariosComEmail = usuarios.filter(u => u && u.email && u.email.includes('@'));\nconsole.log('Usuários com email:', usuariosComEmail.length);\n\n// Debug - mostra os primeiros 3 usuários\nif (usuariosComEmail.length > 0) {\n  console.log('Primeiro usuário com email:', JSON.stringify(usuariosComEmail[0]));\n}\n\n// Retorna usuários já formatados como items para o n8n\nreturn usuariosComEmail.map(user => ({ json: user }));"
+      },
+      "id": "dbc0fca1-e365-4ab0-84f7-b2917bde76cb",
+      "name": "Usuários com Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        460,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "0c57217b-d6d5-4ca6-ad36-1a636279f146",
+      "name": "Processar por Usuário",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [
+        680,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Obter o ID do usuário para debug\nconst item = $input.item;\nconst usuarioAtual = item.json;\n\n// Imprimir detalhes para debug\nconsole.log('Processando usuário:', JSON.stringify(usuarioAtual));\nconsole.log('ID do usuário:', usuarioAtual.id);\n\n// Garantir que temos um ID válido antes de prosseguir\nif (!usuarioAtual || !usuarioAtual.id) {\n  console.error('ID de usuário não encontrado ou inválido:', JSON.stringify(item));\n  throw new Error('ID de usuário não encontrado');\n}\n\nreturn $input.item;"
+      },
+      "id": "c7b781a1-e365-4ab0-94f7-b2917bce76cb",
+      "name": "Debug ID Usuário",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        800,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "method": "GET",
+        "url": "=http://backend:8000/api/v1/admin/tasks/user/{{$json.id}}",
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "redirect": {
+            "redirect": {
+              "follow": true
+            }
+          }
+        }
+      },
+      "id": "672057cd-eb14-42a9-9d57-7e384e488654",
+      "name": "Obter Tarefas do Usuário",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        900,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8uYcMjGGO8U176PN",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar os dados do usuário e suas tarefas\nconst usuario = $node[\"Debug ID Usuário\"].json;\nconst tarefas = $json;\n\n// Log para debug\nconsole.log(`Usuário: ${usuario.name}, ID: ${usuario.id}, Email: ${usuario.email}`);\nconsole.log(`Tarefas recebidas: ${tarefas.length}`);\nif (tarefas.length > 0) {\n  console.log('Exemplo de tarefa:', JSON.stringify(tarefas[0]));\n}\n\n// Data atual\nconst hoje = new Date();\nconst amanha = new Date(hoje);\namanha.setDate(hoje.getDate() + 1);\n\n// Formatar data\nconst dataFormatada = hoje.toLocaleDateString('pt-BR');\n\n// Filtrar tarefas\nconst tarefasHoje = tarefas.filter(t => {\n  if (!t.due_date) return false;\n  const data = new Date(t.due_date);\n  return data.toDateString() === hoje.toDateString();\n});\n\nconst tarefasAmanha = tarefas.filter(t => {\n  if (!t.due_date) return false;\n  const data = new Date(t.due_date);\n  return data.toDateString() === amanha.toDateString();\n});\n\nconst tarefasAtrasadas = tarefas.filter(t => {\n  if (!t.due_date || t.status === 'done') return false;\n  const data = new Date(t.due_date);\n  return data < hoje && data.toDateString() !== hoje.toDateString();\n});\n\n// Log para debug de categorização\nconsole.log(`Tarefas para hoje: ${tarefasHoje.length}`);\nconsole.log(`Tarefas para amanhã: ${tarefasAmanha.length}`);\nconsole.log(`Tarefas atrasadas: ${tarefasAtrasadas.length}`);\n\n// Estatísticas\nconst totalTarefas = tarefas.length;\nconst tarefasConcluidas = tarefas.filter(t => t.status === 'done').length;\n\n// Retornar dados formatados com melhor tratamento para nome e email\nreturn {\n  json: {\n    id: usuario.id,\n    nome: usuario.name || (usuario.email ? usuario.email.split('@')[0] : 'Usuário'),\n    email: usuario.email || '',\n    dataFormatada,\n    tarefasHoje,\n    tarefasAmanha,\n    tarefasAtrasadas,\n    totalTarefas,\n    tarefasConcluidas\n  }\n};"
+      },
+      "id": "0c1e6b5c-8e85-4c4c-916d-1cec8062ef3a",
+      "name": "Processar Dados do Usuário",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Criar um prompt para a IA baseado nos dados do usuário\nconst dados = $json;\n\n// Verificar se temos dados de tarefa\nconsole.log('Dados para gerar prompt:', JSON.stringify(dados));\n\n// Formatar tarefas para o prompt\nconst formatarTarefas = (tarefas) => {\n  if (!tarefas || !tarefas.length) return '(Nenhuma tarefa)';\n  return tarefas.map(t => `- ${t.title} (${t.priority})`).join('\\n');\n};\n\nconst tarefasHoje = formatarTarefas(dados.tarefasHoje);\nconst tarefasAmanha = formatarTarefas(dados.tarefasAmanha);\nconst tarefasAtrasadas = formatarTarefas(dados.tarefasAtrasadas);\n\nconst prompt = `Crie um email de resumo de tarefas para um usuário de um sistema de produtividade chamado Orga.AI. O email deve ser motivacional, breve e destacar as principais tarefas e prioridades. Inclua dicas rápidas e práticas para melhorar a produtividade. Use as informações abaixo para personalizar o email:\\n\\nData: ${dados.dataFormatada}\\nNome do usuário: ${dados.nome}\\nTotal de tarefas: ${dados.totalTarefas}\\nTarefas concluídas: ${dados.tarefasConcluidas}\\n\\nTarefas para hoje:\\n${tarefasHoje}\\n\\nTarefas para amanhã:\\n${tarefasAmanha}\\n\\nTarefas atrasadas:\\n${tarefasAtrasadas}\\n\\nO email deve ter um título, uma saudação personalizada, uma visão geral das tarefas, e ser no formato HTML com cores e formatação que destaquem as diferentes seções. Use o tom de um coach produtivo que está ajudando o usuário a organizar seu dia.`;\n\n// Log para debug\nconsole.log('Prompt gerado com tamanho:', prompt.length);\n\nreturn [{\n  json: {\n    ...dados,\n    prompt: prompt\n  }\n}];"
+      },
+      "id": "79f99e04-46ac-4c3f-982b-8ce4e64c67ff",
+      "name": "Gerar Prompt para IA",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://ollama:11434/api/chat",
+        "method": "POST",
+        "responseFormat": "json",
+        "jsonParameters": true,
+        "options": {
+          "allowUnauthorizedCerts": true,
+          "timeout": 120000
+        },
+        "bodyParametersJson": "={\n  \"model\": \"gemma3:1b\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Você é um assistente especializado em produtividade e gestão de tempo que ajuda pessoas a organizarem suas tarefas. Seu tom é motivacional, prático e direto.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": {{$json[\"prompt\"]}}\n    }\n  ],\n  \"stream\": false\n}"
+      },
+      "id": "df1d34dd-2c2c-4f00-a5cd-a25df0838d26",
+      "name": "Gerar Conteúdo do Email com IA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Formatar o conteúdo do email a partir da resposta da IA\nconst dados = $json;\n\n// Log para debug\nconsole.log('Resposta da IA recebida:', JSON.stringify(dados).substring(0, 300) + '...');\n\n// Extrair o conteúdo da mensagem da resposta da API chat\nlet conteudoHTML = 'Não foi possível gerar o conteúdo do email.';\n\nif (dados.message && dados.message.content) {\n  conteudoHTML = dados.message.content;\n} else if (dados.response) {\n  conteudoHTML = dados.response;\n} else if (dados.choices && dados.choices.length > 0 && dados.choices[0].message) {\n  conteudoHTML = dados.choices[0].message.content;\n}\n\n// Retornar os dados com o HTML formado\nreturn [{\n  json: {\n    ...dados,\n    emailHTML: conteudoHTML\n  }\n}];"
+      },
+      "id": "0edd1bc0-ea34-4e14-ab95-63fae62fbd0c",
+      "name": "Formatar Conteúdo do Email",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1780,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "angelo.sagnori@gmail.com",
+        "toEmail": "={{$json[\"email\"]}}",
+        "subject": "=Orga.AI - Seu resumo diário de tarefas ({{$json[\"dataFormatada\"]}})",
+        "html": "={{$json[\"emailHTML\"]}}",
+        "options": {}
+      },
+      "id": "1c91b921-0951-4f6e-868b-571fccd29d61",
+      "name": "Enviar Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 1,
+      "position": [
+        2000,
+        -120
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "J1NZVklvkNrH45Zo",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "logar-erro",
+        "options": {}
+      },
+      "id": "60572774-d4d7-45d8-8e85-ecb2af78a97f",
+      "name": "Webhook para Logs",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        -20
+      ],
+      "webhookId": "logar-email-enviado"
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "http://backend:8000/api/v1/admin/logs",
+        "method": "PUT",
+        "allowUnauthorizedCerts": true,
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "= { \n  \"level\": \"info\", \n  \"source\": \"n8n_workflow\", \n  \"message\": `Email enviado para ${$json[\"nome\"]} <${$json[\"email\"]}>`,\n  \"details\": { \n    \"workflow\": \"n8n_email_daily_tasks_fixed\", \n    \"user_id\": $json[\"id\"], \n    \"task_count\": $json[\"totalTarefas\"],\n    \"timestamp\": new Date().toISOString()\n  }\n}"
+      },
+      "id": "a0572774-d4d7-45d8-8e85-ecb2af78a97f",
+      "name": "Registrar Log de Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        -120
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8uYcMjGGO8U176PN",
+          "name": "Header Auth account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Agendamento Diário (7:30)": {
+      "main": [
+        [
+          {
+            "node": "Obter Lista de Usuários",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter Lista de Usuários": {
+      "main": [
+        [
+          {
+            "node": "Usuários com Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usuários com Email": {
+      "main": [
+        [
+          {
+            "node": "Processar por Usuário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar por Usuário": {
+      "main": [
+        [
+          {
+            "node": "Debug ID Usuário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug ID Usuário": {
+      "main": [
+        [
+          {
+            "node": "Obter Tarefas do Usuário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter Tarefas do Usuário": {
+      "main": [
+        [
+          {
+            "node": "Processar Dados do Usuário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Dados do Usuário": {
+      "main": [
+        [
+          {
+            "node": "Gerar Prompt para IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Prompt para IA": {
+      "main": [
+        [
+          {
+            "node": "Gerar Conteúdo do Email com IA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Conteúdo do Email com IA": {
+      "main": [
+        [
+          {
+            "node": "Formatar Conteúdo do Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formatar Conteúdo do Email": {
+      "main": [
+        [
+          {
+            "node": "Enviar Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar Email": {
+      "main": [
+        [
+          {
+            "node": "Registrar Log de Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fixed-2025-05-11",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9f7f173261e2c4bb96c273fcf3027bcd4ed0aa5ab7b678cd34d5675647adfe01"
+  },
+  "id": "fixed_workflow_with_debug",
+  "tags": ["corrigido", "debug"]
+}

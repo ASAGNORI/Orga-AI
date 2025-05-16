@@ -1,0 +1,302 @@
+{
+  "name": "n8n_email_daily_tasks_sem_ia",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "96781638-5bb9-44ba-91db-a93e20840db6",
+      "name": "Agendamento Diário (7:30)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        2360,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "http://backend:8000/api/v1/admin/users",
+        "options": {}
+      },
+      "id": "660eba9f-3deb-47f1-bd35-042d326d8ee4",
+      "name": "Obter Lista de Usuários",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        2580,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8uYcMjGGO8U176PN",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Filtra apenas usuários com email válido\nconst response = $input.all();\nconsole.log('Resposta da API:', JSON.stringify(response).substring(0, 200));\n\n// Extrair os usuários da resposta\nlet usuarios = [];\nif (response && response.length > 0 && response[0].json) {\n  // Verificar se os dados estão dentro de um campo 'data'\n  if (response[0].json.data && Array.isArray(response[0].json.data)) {\n    usuarios = response[0].json.data;\n  } \n  // Verificar se o json já é um array\n  else if (Array.isArray(response[0].json)) {\n    usuarios = response[0].json;\n  }\n}\n\nconsole.log('Total de usuários extraídos:', usuarios.length);\n\n// Filtra apenas os que têm email\nconst usuariosComEmail = usuarios.filter(u => u && u.email && u.email.includes('@'));\nconsole.log('Usuários com email:', usuariosComEmail.length);\n\n// Debug - mostra os primeiros 3 usuários\nif (usuariosComEmail.length > 0) {\n  console.log('Primeiro usuário com email:', JSON.stringify(usuariosComEmail[0]));\n}\n\n// Retorna usuários já formatados como items para o n8n\nreturn usuariosComEmail.map(user => ({ json: user }));"
+      },
+      "id": "c39f121a-a7fe-4112-a27e-72ca30730ff8",
+      "name": "Usuários com Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        2800,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "236cebab-d164-48af-aa46-17bbd05a898c",
+      "name": "Processar por Usuário",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [
+        3020,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Obter o ID do usuário para debug\nconst item = $input.item;\nconst usuarioAtual = item.json;\n\n// Imprimir detalhes para debug\nconsole.log('Processando usuário:', JSON.stringify(usuarioAtual));\nconsole.log('ID do usuário:', usuarioAtual.id);\n\nreturn $input.item;"
+      },
+      "id": "a8677ba0-86cf-43e5-b3dd-ef26d5b67ea4",
+      "name": "Debug ID Usuário",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3240,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "url": "=http://backend:8000/api/v1/admin/tasks/user/{{$json.id}}",
+        "options": {}
+      },
+      "id": "926edf68-9efb-4c81-b9f5-5d89ae7f45a8",
+      "name": "Obter Tarefas do Usuário",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        3460,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8uYcMjGGO8U176PN",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Processar os dados do usuário e suas tarefas\nconst usuario = $node[\"Debug ID Usuário\"].json;\nconst tarefas = $json;\n\n// Log para debug\nconsole.log(`Usuário: ${usuario.name}, ID: ${usuario.id}, Email: ${usuario.email}`);\nconsole.log(`Tarefas recebidas: ${tarefas.length}`);\nif (tarefas.length > 0) {\n  console.log('Exemplo de tarefa:', JSON.stringify(tarefas[0]));\n}\n\n// Data atual\nconst hoje = new Date();\nconst amanha = new Date(hoje);\namanha.setDate(hoje.getDate() + 1);\n\n// Formatar data\nconst dataFormatada = hoje.toLocaleDateString('pt-BR');\n\n// Filtrar tarefas\nconst tarefasHoje = tarefas.filter(t => {\n  if (!t.due_date) return false;\n  const data = new Date(t.due_date);\n  return data.toDateString() === hoje.toDateString();\n});\n\nconst tarefasAmanha = tarefas.filter(t => {\n  if (!t.due_date) return false;\n  const data = new Date(t.due_date);\n  return data.toDateString() === amanha.toDateString();\n});\n\nconst tarefasAtrasadas = tarefas.filter(t => {\n  if (!t.due_date || t.status === 'done') return false;\n  const data = new Date(t.due_date);\n  return data < hoje && data.toDateString() !== hoje.toDateString();\n});\n\n// Log para debug de categorização\nconsole.log(`Tarefas para hoje: ${tarefasHoje.length}`);\nconsole.log(`Tarefas para amanhã: ${tarefasAmanha.length}`);\nconsole.log(`Tarefas atrasadas: ${tarefasAtrasadas.length}`);\n\n// Estatísticas\nconst totalTarefas = tarefas.length;\nconst tarefasConcluidas = tarefas.filter(t => t.status === 'done').length;\n\n// Retornar dados formatados com melhor tratamento para nome e email\nreturn {\n  json: {\n    id: usuario.id,\n    nome: usuario.name || (usuario.email ? usuario.email.split('@')[0] : 'Usuário'),\n    email: usuario.email || '',\n    dataFormatada,\n    tarefasHoje,\n    tarefasAmanha,\n    tarefasAtrasadas,\n    totalTarefas,\n    tarefasConcluidas\n  }\n};"
+      },
+      "id": "a5d40166-f644-4aa7-aeea-781b93a5b1b1",
+      "name": "Processar Dados do Usuário",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        3680,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Gerar conteúdo de email sem usar IA\nconst dados = $json;\n\n// Log para debug\nconsole.log('Gerando email para:', dados.nome, dados.email);\n\n// Formatação das listas de tarefas\nconst formatarTarefas = (tarefas) => {\n  if (!tarefas || !tarefas.length) return '<p style=\"color:#666;\">(Nenhuma tarefa)</p>';\n  \n  return '<ul>' + tarefas.map(t => {\n    let prioridade = '';\n    switch(t.priority) {\n      case 'high': prioridade = '<span style=\"color:red;font-weight:bold;\">Alta</span>'; break;\n      case 'medium': prioridade = '<span style=\"color:orange;\">Média</span>'; break;\n      case 'low': prioridade = '<span style=\"color:green;\">Baixa</span>'; break;\n      default: prioridade = '';\n    }\n    \n    return `<li>${t.title} - ${prioridade}</li>`;\n  }).join('') + '</ul>';\n};\n\n// Conteúdo do email\nconst emailHTML = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <title>Orga.AI - Resumo de Tarefas</title>\n  <style>\n    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; }\n    .header { background-color: #4A86E8; color: white; padding: 20px; text-align: center; }\n    .container { padding: 20px; }\n    .section { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee; }\n    .stats { display: inline-block; margin-right: 20px; background: #f5f5f5; padding: 10px; border-radius: 5px; }\n    h2 { color: #4A86E8; }\n    .today { border-left: 5px solid #FFC107; padding-left: 15px; }\n    .tomorrow { border-left: 5px solid #4CAF50; padding-left: 15px; }\n    .overdue { border-left: 5px solid #F44336; padding-left: 15px; }\n    .footer { text-align: center; font-size: 12px; color: #999; margin-top: 20px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>Orga.AI - Seu Resumo Diário</h1>\n    <p>${dados.dataFormatada}</p>\n  </div>\n  \n  <div class=\"container\">\n    <h2>Olá, ${dados.nome}!</h2>\n    \n    <div class=\"section\">\n      <h3>Seu Progresso</h3>\n      <div class=\"stats\">\n        <strong>Total de Tarefas:</strong> ${dados.totalTarefas}\n      </div>\n      <div class=\"stats\">\n        <strong>Tarefas Concluídas:</strong> ${dados.tarefasConcluidas}\n      </div>\n    </div>\n    \n    <div class=\"section today\">\n      <h3>Suas Tarefas para Hoje</h3>\n      ${formatarTarefas(dados.tarefasHoje)}\n    </div>\n    \n    <div class=\"section tomorrow\">\n      <h3>Planejamento para Amanhã</h3>\n      ${formatarTarefas(dados.tarefasAmanha)}\n    </div>\n    \n    <div class=\"section overdue\">\n      <h3>Tarefas Atrasadas</h3>\n      ${formatarTarefas(dados.tarefasAtrasadas)}\n    </div>\n    \n    <div class=\"section\">\n      <h3>Dica do Dia</h3>\n      <p>Lembre-se de priorizar suas tarefas mais importantes pela manhã, quando seu nível de energia está mais alto. Use a técnica Pomodoro para manter o foco: trabalhe por 25 minutos e descanse por 5.</p>\n    </div>\n  </div>\n  \n  <div class=\"footer\">\n    <p>Este email foi enviado automaticamente pelo sistema Orga.AI</p>\n    <p>© 2025 Orga.AI - Sua vida organizada com inteligência</p>\n  </div>\n</body>\n</html>\n`;\n\n// Retornar os dados com o HTML formado\nreturn [{\n  json: {\n    ...dados,\n    emailHTML\n  }\n}];"
+      },
+      "id": "efb0b1c9-e2bc-491c-82d3-fcc96b63ec84",
+      "name": "Gerar Conteúdo do Email",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3900,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "headerAuth",
+        "requestMethod": "PUT",
+        "url": "http://backend:8000/api/v1/admin/logs",
+        "allowUnauthorizedCerts": true,
+        "jsonParameters": false,
+        "options": {},
+        "bodyContentType": "json",
+        "body": {
+          "level": "info",
+          "source": "n8n_workflow",
+          "message": "Email enviado via Gmail",
+          "details": {
+            "workflow": "n8n_email_daily_tasks_sem_ia",
+            "timestamp": "{{$now.toISOString()}}"
+          }
+        }
+      },
+      "id": "d93b2bcd-e952-4a93-b02a-f9ae55c8904f",
+      "name": "Registrar Log de Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        4340,
+        180
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8uYcMjGGO8U176PN",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "OrgaAI Daily Update",
+        "message": "={{ $json.emailHTML }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        4120,
+        180
+      ],
+      "id": "0f96f86a-aeb3-4c3f-b7ed-6c0314099c23",
+      "name": "Gmail",
+      "webhookId": "acd13ca0-9632-4cef-8338-83990656e977",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "pHmxlodcJrmbNcN5",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Agendamento Diário (7:30)": {
+      "main": [
+        [
+          {
+            "node": "Obter Lista de Usuários",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter Lista de Usuários": {
+      "main": [
+        [
+          {
+            "node": "Usuários com Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usuários com Email": {
+      "main": [
+        [
+          {
+            "node": "Processar por Usuário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar por Usuário": {
+      "main": [
+        [
+          {
+            "node": "Debug ID Usuário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug ID Usuário": {
+      "main": [
+        [
+          {
+            "node": "Obter Tarefas do Usuário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obter Tarefas do Usuário": {
+      "main": [
+        [
+          {
+            "node": "Processar Dados do Usuário",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar Dados do Usuário": {
+      "main": [
+        [
+          {
+            "node": "Gerar Conteúdo do Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar Conteúdo do Email": {
+      "main": [
+        [
+          {
+            "node": "Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail": {
+      "main": [
+        [
+          {
+            "node": "Registrar Log de Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "13e06bd0-dfb0-4d4b-b7fa-20065c320aac",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "9f7f173261e2c4bb96c273fcf3027bcd4ed0aa5ab7b678cd34d5675647adfe01"
+  },
+  "id": "XTg3Q4ZGnFgHmeOs",
+  "tags": []
+}
