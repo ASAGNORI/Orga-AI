@@ -64,7 +64,7 @@ async def generate_email(
             full_prompt = f"{contexto}\n\nSolicitação: {prompt.strip()}"
             response, _ = ai_service.process_message(full_prompt)
             cleaned = clean_llm_response(response)
-            return {"result": cleaned}
+            return JSONResponse(content={"response": cleaned, "result": cleaned, "status": "ok"})
 
         # Buscar tarefas do usuário
         tasks = db.query(TaskModel).filter(TaskModel.user_id == current_user.id).order_by(TaskModel.due_date.asc()).all()

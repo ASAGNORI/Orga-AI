@@ -1,0 +1,28 @@
+# Orga.AI Codeowners File
+# For more information about this file format, see:
+# https://docs.github.com/en/repositories/managing-your-repository-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owners for everything in the repo
+* @orga-ai/core-team
+
+# Backend specific code
+/backend/ @orga-ai/backend-team
+/backend/app/routers/ @orga-ai/api-team
+/backend/app/services/ @orga-ai/services-team
+
+# Frontend specific code
+/frontend/ @orga-ai/frontend-team
+/frontend/app/ @orga-ai/ui-team
+
+# AI models and integrations
+/cookbooks/ @orga-ai/ai-team
+/cookbooks/models/ @orga-ai/model-team
+/cookbooks/n8n-flows/ @orga-ai/automation-team
+
+# Infrastructure
+/docker/ @orga-ai/devops-team
+/scripts/ @orga-ai/devops-team
+/supabase/ @orga-ai/database-team
+
+# Documentation
+*.md @orga-ai/docs-team
