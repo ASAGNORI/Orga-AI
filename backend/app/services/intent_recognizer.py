@@ -22,7 +22,7 @@ class IntentRecognizer:
         # Padrões de intenção e suas respostas correspondentes
         self.intent_patterns = {
             # Saudações
-            r"^(oi|olá|hey|e aí|bom dia|boa tarde|boa noite)[\s!]*$": {
+            r"^(oi|olá|olá!|ola|ola!|hey|e aí|eai|tudo bem|como vai|bom dia|boa tarde|boa noite|hello)[\s!?,.]*$": {
                 "resposta": "Olá! Como posso ajudar você hoje?",
                 "intent": "saudação",
                 "ação": None
@@ -62,12 +62,47 @@ class IntentRecognizer:
                 "intent": "criar_tarefa",
                 "ação": "create_task"
             },
+            
+            # Padrão para criar tarefas com parâmetros específicos
+            r"(?:criar|nova|adicionar|crie) (?:uma )?(?:tarefa|atividade)(?:\s+nova)?:?\s*[\"\']?([^\"\']+)[\"\']?\s*,?\s*(?:(?:data|prazo|para|projeto|status|prioridade|importância)\s*:?\s*[\"\'\w][\"\'\w\s\/\d-]*[\"\'\w][\s,]*)*": {
+                "resposta": "Tarefa criada com sucesso! Você pode ver todos os detalhes na sua lista de tarefas.",
+                "intent": "criar_tarefa_completa",
+                "ação": "create_task_complete"
+            },
                 
             # Padrões para listar tarefas
             r"(listar|mostrar|ver) (minhas)?\s*tarefas": {
                 "resposta": "Aqui estão suas tarefas atuais:",
                 "intent": "listar_tarefas",
                 "ação": "list_tasks"
+            },
+            
+            # Padrões para listar tarefas com filtro de data
+            r"(listar|mostrar|ver|liste) (minhas)?\s*tarefas (?:para|com|de|do dia) (?:a )?data (?:de )?(hoje|amanhã|amanha|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)": {
+                "resposta": "Aqui estão suas tarefas para a data solicitada:",
+                "intent": "listar_tarefas_data",
+                "ação": "list_tasks_by_date"
+            },
+            
+            # Padrão adicional para listar tarefas por data (forma mais simples)
+            r"(listar|mostrar|ver|liste) (minhas)?\s*tarefas (?:de )?(hoje|amanhã|amanha|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)": {
+                "resposta": "Aqui estão suas tarefas para a data solicitada:",
+                "intent": "listar_tarefas_data",
+                "ação": "list_tasks_by_date"
+            },
+            
+            # Padrões em formato de pergunta para listar tarefas
+            r"(?:quais|quais são|mostre|me mostre) (minhas)?\s*tarefas (?:para|de|do dia|com data|da data) (hoje|amanhã|amanha|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)": {
+                "resposta": "Aqui estão suas tarefas para a data solicitada:",
+                "intent": "listar_tarefas_data",
+                "ação": "list_tasks_by_date"
+            },
+            
+            # Padrão mais simples para perguntas sobre tarefas do dia
+            r"(?:quais|quais são) (minhas)?\s*tarefas (?:de )?(hoje|amanhã|amanha|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)": {
+                "resposta": "Aqui estão suas tarefas para a data solicitada:",
+                "intent": "listar_tarefas_data",
+                "ação": "list_tasks_by_date"
             },
             
             # Pedidos para listar projetos
@@ -170,6 +205,54 @@ class IntentRecognizer:
                         if priority == "media":
                             priority = "média"
                         entities["priority"] = priority
+                        
+                # Caso específico para tarefas completas (com parâmetros)
+                elif info["intent"] == "criar_tarefa_completa":
+                    # Extrair título da tarefa (primeiro grupo de captura ou do padrão específico)
+                    title_match = re.search(r"(?:criar|nova|adicionar|crie) (?:uma )?(?:tarefa|atividade)(?:\s+nova)?:?\s*[\"\']?([^\"\',:]+)[\"\']?", normalized)
+                    if title_match:
+                        entities["task_title"] = title_match.group(1).strip()
+                    
+                    # Extrair data com padrão mais específico
+                    date_match = re.search(r"data\s*:?\s*[\"\']?(hoje|amanhã|amanha|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)[\"\']?", normalized)
+                    if date_match:
+                        date_value = date_match.group(1).lower()
+                        entities["due_date"] = date_value
+                    elif "hoje" in normalized:
+                        entities["due_date"] = "hoje"
+                    elif "amanhã" in normalized or "amanha" in normalized:
+                        entities["due_date"] = "amanhã"
+                    
+                    # Extrair prioridade com padrão mais específico
+                    priority_match = re.search(r"prioridade\s*:?\s*[\"\']?(alta|média|media|baixa)[\"\']?", normalized)
+                    if priority_match:
+                        priority = priority_match.group(1).lower()
+                        if priority == "media":
+                            priority = "média"
+                        entities["priority"] = priority
+                    
+                    # Extrair projeto
+                    project_match = re.search(r"projeto\s*:?\s*[\"\']?([^\"\',:;]+)[\"\']?", normalized)
+                    if project_match:
+                        entities["project"] = project_match.group(1).strip()
+                    
+                    # Extrair status
+                    status_match = re.search(r"status\s*:?\s*[\"\']?(todo|doing|done|em andamento|pendente|concluído|concluido)[\"\']?", normalized)
+                    if status_match:
+                        status = status_match.group(1).lower()
+                        # Mapear para os valores do sistema
+                        status_map = {
+                            "todo": "todo", 
+                            "doing": "doing", 
+                            "done": "done",
+                            "em andamento": "doing",
+                            "pendente": "todo",
+                            "concluído": "done",
+                            "concluido": "done"
+                        }
+                        entities["status"] = status_map.get(status, "todo")
+                    
+                    logger.info(f"Entidades extraídas para tarefa: {entities}")
                 
                 # Caso específico para agendamento
                 if info["intent"] == "agendar_evento" and len(match.groups()) > 3:
@@ -183,6 +266,37 @@ class IntentRecognizer:
                     time_match = re.search(r"(?:às|as|para)\s+(\d{1,2}(?::|h)?\d{0,2})", normalized)
                     if time_match:
                         entities["time"] = time_match.group(1)
+                        
+                # Caso específico para listar tarefas por data
+                elif info["intent"] == "listar_tarefas_data":
+                    # Extrair a data mencionada
+                    date_match = re.search(r"(?:para|com|de|do dia) (?:a )?data (?:de )?(hoje|amanhã|amanha|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)", normalized)
+                    if date_match:
+                        entities["filter_date"] = date_match.group(1).lower()
+                        logger.info(f"Data de filtro detectada: {entities['filter_date']}")
+                    else:
+                        # Tentar padrões alternativos
+                        date_match = re.search(r"(?:listar|mostrar|ver|liste)(?:\s+minhas)?\s+tarefas\s+(?:de\s+)?(hoje|amanhã|amanha|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)", normalized)
+                        if date_match:
+                            entities["filter_date"] = date_match.group(1).lower()
+                            logger.info(f"Data de filtro detectada (padrão alternativo 1): {entities['filter_date']}")
+                        else:
+                            # Tentar padrão de pergunta
+                            date_match = re.search(r"(?:quais|quais são|mostre|me mostre)(?:\s+minhas)?\s+tarefas\s+(?:para|de|do dia|com data|da data)\s+(hoje|amanhã|amanha|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)", normalized)
+                            if date_match:
+                                entities["filter_date"] = date_match.group(1).lower()
+                                logger.info(f"Data de filtro detectada (padrão alternativo 2): {entities['filter_date']}")
+                            else:
+                                # Padrão mais simples para perguntas
+                                date_match = re.search(r"(?:quais|quais são)(?:\s+minhas)?\s+tarefas\s+(?:de\s+)?(hoje|amanhã|amanha|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)", normalized)
+                                if date_match:
+                                    entities["filter_date"] = date_match.group(1).lower()
+                                    logger.info(f"Data de filtro detectada (padrão alternativo 3): {entities['filter_date']}")
+                                else:
+                                    # Captura simples da pergunta "quais são minhas tarefas hoje?"
+                                    if "quais" in normalized and "tarefas" in normalized and "hoje" in normalized:
+                                        entities["filter_date"] = "hoje"
+                                        logger.info(f"Data de filtro detectada (padrão básico): hoje")
                 
                 return {
                     "intent": info["intent"],

@@ -7,6 +7,7 @@ from app.database import get_db
 from app.services.auth_service import get_current_user
 from app.services.vector_store_service import vector_store_service
 from app.services.intent_recognizer import intent_recognizer
+from app.services.action_handler import action_handler
 from app.schemas.user import User
 from app.models.chat import ChatHistory, ChatPrompt
 from app.models.task_model import Task as TaskModel
@@ -34,6 +35,14 @@ async def chat(
         
         # Step 1: Check for cached responses or intent-based quick replies
         has_intent, intent_info = intent_recognizer.process_message(message)
+        
+        # Executar ação se houver uma intenção com ação associada
+        action_result = None
+        if has_intent and intent_info.get("action"):
+            action = intent_info.get("action")
+            entities = intent_info.get("entities", {})
+            action_result = action_handler.execute_action(action, entities, str(current_user.id), db)
+            logger.info(f"Ação executada: {action}, resultado: {action_result.get('success')}")
         
         # Step 2: Update the user's vector store asynchronously (if it hasn't been updated recently)
         try:
@@ -80,12 +89,45 @@ async def chat(
         
         # Step 5: Process message using our hybrid system (RAG + Intent + LLM)
         history_tuples = [(h.user_message, h.ai_response) for h in history]
-        reply, metadata = ai_service.process_message(
-            message=message,
-            history=history_tuples,
-            user_context=context,  # Usando o contexto completo construído acima
-            user_id=str(current_user.id)
-        )
+        
+        # Se uma ação foi executada com sucesso, usar essa resposta em vez de chamar o LLM
+        if action_result and action_result.get("success"):
+            reply = action_result.get("message")
+            
+            # Se for uma tarefa criada, formatar uma resposta mais detalhada
+            if "task_details" in action_result:
+                details = action_result["task_details"]
+                priority_text = {"high": "alta", "medium": "média", "low": "baixa"}.get(details["priority"], details["priority"])
+                
+                due_date_text = ""
+                if details.get("due_date"):
+                    # Converter para datetime e formatar                    
+                    due_date = datetime.fromisoformat(details["due_date"])
+                    local_tz = pytz.timezone('America/Sao_Paulo')
+                    local_date = due_date.astimezone(local_tz)
+                    due_date_text = f", com prazo para {local_date.strftime('%d/%m/%Y')}"
+                
+                reply = f"<p>✅ Tarefa <strong>{details['title']}</strong> criada com sucesso com prioridade <strong>{priority_text}</strong>{due_date_text}!</p>"
+                
+                # Adicionar uma linha adicional com verificação
+                reply += "<p>A tarefa foi adicionada à sua lista. Você pode verificá-la na seção de Tarefas.</p>"
+            
+            # Configurar metadata básico sem chamar o LLM
+            metadata = {
+                "intent_detected": True,
+                "intent_type": intent_info.get("intent"),
+                "action_executed": intent_info.get("action"),
+                "action_success": action_result.get("success"),
+                "processing_time": time.time() - start_time
+            }
+        else:
+            # Se não houve ação executada ou falhou, processar normalmente com o LLM
+            reply, metadata = ai_service.process_message(
+                message=message,
+                history=history_tuples,
+                user_context=context,  # Usando o contexto completo construído acima
+                user_id=str(current_user.id)
+            )
         
         # Extract suggested tags based on intent and content
         suggested_tags = []
@@ -135,8 +177,36 @@ async def chat(
         )
         
     except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in chat endpoint: {str(e)}", exc_info=True)
+        
+        # Resposta de fallback em caso de erro 
+        reply = "<p>Desculpe, encontrei um problema ao processar sua solicitação. Por favor, tente novamente ou reformule sua pergunta.</p>"
+        
+        # Criar histórico de qualquer forma para manter o contexto da conversa
+        try:
+            chat_history = ChatHistory(
+                id=uuid.uuid4(),
+                user_id=current_user.id,
+                user_message=message,
+                ai_response=reply,
+                metadata={"error": str(e), "error_type": str(type(e).__name__)}
+            )
+            db.add(chat_history)
+            db.commit()
+            logger.info(f"Error fallback response saved to history for user {current_user.id}")
+        except Exception as inner_e:
+            logger.error(f"Could not save error fallback response: {str(inner_e)}")
+            db.rollback()
+        
+        # Retornar uma resposta em vez de lançar uma exceção para melhor UX
+        return {
+            "reply": reply,
+            "metadata": {
+                "error": True,
+                "error_message": str(e),
+                "intent_detected": False
+            }
+        }
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/history", response_model=list[ChatHistoryEntry])

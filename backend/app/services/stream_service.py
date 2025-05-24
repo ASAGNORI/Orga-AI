@@ -99,10 +99,14 @@ class StreamService:
         try:
             has_intent, intent_info = intent_recognizer.process_message(message)
             
+            logger.info(f"Intent processada: has_intent={has_intent}, intent_type={intent_info.get('intent')}")
+            
             if has_intent and intent_info and intent_info.get("confidence", 0) > 0.85:
                 # Para intenções simples, responder diretamente
                 if intent_info["intent"] in ["saudação", "despedida", "agradecimento", "ajuda"]:
-                    return True, intent_info, intent_info.get("response")
+                    resposta = intent_info.get("resposta")
+                    logger.info(f"Resposta rápida para intenção '{intent_info['intent']}': {resposta}")
+                    return True, intent_info, resposta
             
             # Para outras intenções, apenas retornar a informação mas deixar o LLM processar
             if has_intent:
