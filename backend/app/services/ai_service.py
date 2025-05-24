@@ -34,6 +34,26 @@ class AIService:
         
         # Remove underscore formatting
         response = response.replace("_", "")
+        
+        # Remove phrase that might be included in template
+        response = response.replace("Para ajudar você da melhor forma possível, vou levar em consideração suas tarefas e preferências.", "")
+        
+        # Remove multiple asterisks that appear together
+        response = response.replace("** ** **", "")
+        
+        import re
+        # Remove code blocks entirely
+        response = re.sub(r'```[\s\S]*?```', '', response)
+        
+        # Remove backtick blocks and their content
+        response = re.sub(r'`[^`]*`', '', response)
+        
+        # Clean up excessive newlines
+        response = re.sub(r'\n\s*\n', '\n\n', response)
+        response = re.sub(r'\n{3,}', '\n\n', response)
+        
+        # Clean up extra whitespace
+        response = re.sub(r'\s+', ' ', response).strip()
             
         return response
 
@@ -255,8 +275,12 @@ class AIService:
                     else:
                         response = str(ai_message)
                     
-                    # Clean up any repeated markdown or formatting artifacts
+                    # Clean up any repeated markdown or formatting artifacts using both internal and advanced cleaner
                     response = self._clean_response(response)
+                    
+                    # Apply advanced cleaning from ollama_cleaner utility
+                    from app.utils.ollama_cleaner import clean_ollama_response
+                    response = clean_ollama_response(response)
                     
                     break  # Success
                     
