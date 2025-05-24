@@ -1,5 +1,5 @@
-FROM ollama/ollama:0.1.29
-# Use the official Ollama image as a base
+FROM ollama/ollama:latest
+# Use the official Ollama image as a base (atualizado para a versão mais recente)
 
 WORKDIR /app
 

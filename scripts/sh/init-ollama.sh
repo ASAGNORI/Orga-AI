@@ -10,6 +10,7 @@ MODEL=${OLLAMA_MODEL:-$DEFAULT_MODEL}
 CHAT_MODEL=${OLLAMA_MODEL_CHAT:-$DEFAULT_CHAT_MODEL}
 
 # Modelos customizados para criar: "nome_customizado:caminho_do_modelfile:modelo_base_necessario"
+# Usamos gemma3:1b como base para nosso modelo customizado
 CUSTOM_MODELS_TO_CREATE=(
     "optimized-gemma3:/models/Modelfile:gemma3:1b"
 )
@@ -168,30 +169,54 @@ for entry in "${CUSTOM_MODELS_TO_CREATE[@]}"; do
 done
 log "✨ Processamento de modelos customizados concluído."
 
-# Verificar se os modelos definidos em .env (MODEL e CHAT_MODEL) existem
-# Se não existirem e não forem os customizados, tentar baixá-los.
-# Esta etapa é mais uma garantia, pois o ideal é que MODEL e CHAT_MODEL
-# sejam os nomes dos modelos customizados criados.
+# Verificar se os modelos definidos em .env estão disponíveis após a criação dos modelos customizados
+# Não tentamos baixar novamente modelos customizados que já foram criados no passo anterior
 
 log "Verificando modelo principal: $MODEL"
-if ! ollama show "$MODEL" >/dev/null 2>&1; then
-    log "Modelo principal $MODEL não encontrado. Tentando baixar..."
-    if ! download_model "$MODEL"; then
-        log "❌ Falha ao baixar/confirmar modelo principal $MODEL. Verifique as configurações."
+# Verificar se o modelo já existe ou é um dos modelos customizados que acabamos de criar
+is_custom_model=false
+for entry in "${CUSTOM_MODELS_TO_CREATE[@]}"; do
+    IFS=':' read -r custom_name _ _ <<< "$entry"
+    if [ "$MODEL" = "$custom_name" ]; then
+        is_custom_model=true
+        log "✅ Modelo principal $MODEL é um modelo customizado que já foi criado."
+        break
     fi
-else
-    log "✅ Modelo principal $MODEL já existe."
+done
+
+if ! $is_custom_model; then
+    if ! ollama show "$MODEL" >/dev/null 2>&1; then
+        log "Modelo principal $MODEL não encontrado. Tentando baixar..."
+        if ! download_model "$MODEL"; then
+            log "❌ Falha ao baixar/confirmar modelo principal $MODEL. Verifique as configurações."
+        fi
+    else
+        log "✅ Modelo principal $MODEL já existe."
+    fi
 fi
 
 if [ "$MODEL" != "$CHAT_MODEL" ]; then
     log "Verificando modelo de chat: $CHAT_MODEL"
-    if ! ollama show "$CHAT_MODEL" >/dev/null 2>&1; then
-        log "Modelo de chat $CHAT_MODEL não encontrado. Tentando baixar..."
-        if ! download_model "$CHAT_MODEL"; then
-            log "❌ Falha ao baixar/confirmar modelo de chat $CHAT_MODEL. Verifique as configurações."
+    # Verificar se o modelo de chat é um modelo customizado
+    is_custom_chat_model=false
+    for entry in "${CUSTOM_MODELS_TO_CREATE[@]}"; do
+        IFS=':' read -r custom_name _ _ <<< "$entry"
+        if [ "$CHAT_MODEL" = "$custom_name" ]; then
+            is_custom_chat_model=true
+            log "✅ Modelo de chat $CHAT_MODEL é um modelo customizado que já foi criado."
+            break
         fi
-    else
-        log "✅ Modelo de chat $CHAT_MODEL já existe."
+    done
+    
+    if ! $is_custom_chat_model; then
+        if ! ollama show "$CHAT_MODEL" >/dev/null 2>&1; then
+            log "Modelo de chat $CHAT_MODEL não encontrado. Tentando baixar..."
+            if ! download_model "$CHAT_MODEL"; then
+                log "❌ Falha ao baixar/confirmar modelo de chat $CHAT_MODEL. Verifique as configurações."
+            fi
+        else
+            log "✅ Modelo de chat $CHAT_MODEL já existe."
+        fi
     fi
 fi
 
